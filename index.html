@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat con la Base de Datos de Recepción</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.8"></script>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #f0f2f5; margin: 0; display: flex; justify-content: center; align-items: center; height: 100vh; }
+        .chat-container { width: 90%; max-width: 600px; height: 80vh; background: white; border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.1 ); display: flex; flex-direction: column; }
+        #chat-window { flex-grow: 1; overflow-y: auto; padding: 20px; }
+        .message { margin-bottom: 15px; padding: 10px 15px; border-radius: 18px; max-width: 80%; line-height: 1.4; }
+        .user-message { background-color: #007bff; color: white; align-self: flex-end; margin-left: auto; }
+        .ia-message { background-color: #e9e9eb; color: #333; align-self: flex-start; }
+        .error-message { background-color: #ffebee; color: #c62828; border: 1px solid #c62828; }
+        #input-area { display: flex; padding: 15px; border-top: 1px solid #ddd; }
+        #user-input { flex-grow: 1; padding: 10px; border: 1px solid #ccc; border-radius: 20px; font-size: 16px; }
+        #send-button { background: #007bff; color: white; border: none; border-radius: 50%; width: 45px; height: 45px; margin-left: 10px; font-size: 20px; cursor: pointer; }
+        pre { background-color: #2d2d2d; color: #f8f8f2; padding: 10px; border-radius: 5px; white-space: pre-wrap; word-wrap: break-word; }
+    </style>
+</head>
+<body>
+
+<div class="chat-container">
+    <div id="chat-window">
+        <div class="message ia-message">Hola, soy tu asistente de base de datos. ¿Qué información necesitas de la tabla de registros?</div>
+    </div>
+    <div id="input-area">
+        <input type="text" id="user-input" placeholder="Ej: busca al paciente Juan Perez...">
+        <button id="send-button">→</button>
+    </div>
+</div>
+
+<script>
+    // Tus claves de Supabase (¡estas son públicas y seguras de poner aquí!)
+    const supabaseUrl = 'https://esiklpxyectbekxvajnw.supabase.co';
+    const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVzaWtscHh5ZWN0YmVreHZham53Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjE2OTI1MjEsImV4cCI6MjA3NzI2ODUyMX0.mtQnqUrTmhmN1DQxOAUnGpizhYZobStHDH0cz_XfKGU';
+    const supabase = window.supabase.createClient(supabaseUrl, supabaseKey );
+
+    const chatWindow = document.getElementById('chat-window');
+    const userInput = document.getElementById('user-input');
+    const sendButton = document.getElementById('send-button');
+
+    sendButton.addEventListener('click', handleUserMessage);
+    userInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+            handleUserMessage();
+        }
+    });
+
+    function addMessage(text, type, isRawJson = false) {
+        const messageDiv = document.createElement('div');
+        messageDiv.classList.add('message', type);
+        if (isRawJson) {
+            messageDiv.innerHTML = `<pre>${text}</pre>`;
+        } else {
+            messageDiv.textContent = text;
+        }
+        chatWindow.appendChild(messageDiv);
+        chatWindow.scrollTop = chatWindow.scrollHeight;
+    }
+
+    async function handleUserMessage() {
+        const pregunta = userInput.value.trim();
+        if (!pregunta) return;
+
+        addMessage(pregunta, 'user-message');
+        userInput.value = '';
+        addMessage('Pensando...', 'ia-message', false);
+
+        try {
+            // 1. Llamar a la Edge Function para que la IA convierta la pregunta en un plan JSON
+            const { data: plan, error: planError } = await supabase.functions.invoke('chat-con-ia', {
+                body: { pregunta },
+            });
+
+            if (planError) throw planError;
+            if (plan.error) throw new Error(plan.error);
+            
+            // Mostramos el plan que generó la IA (muy útil para depurar)
+            document.querySelector('.ia-message:last-child').remove(); // Quita el "Pensando..."
+            addMessage('Plan de la IA:\n' + JSON.stringify(plan, null, 2), 'ia-message', true);
+
+            // 2. Construir y ejecutar la consulta de Supabase basada en el plan de la IA
+            let query = supabase.from(plan.tabla).select(plan.columnas);
+
+            if (plan.filtros && plan.filtros.length > 0) {
+                plan.filtros.forEach(filtro => {
+                    query = query[filtro.operador](filtro.columna, filtro.valor);
+                });
+            }
+            
+            if (plan.accion === 'count') {
+                query = query.select('*', { count: 'exact', head: true });
+            }
+
+            const { data: resultados, error: dbError, count } = await query;
+
+            if (dbError) throw dbError;
+
+            // 3. Mostrar los resultados al usuario
+            if (plan.accion === 'count') {
+                addMessage(`Respuesta: Se encontraron ${count} registros.`, 'ia-message');
+            } else if (resultados.length === 0) {
+                addMessage('No encontré resultados para tu consulta.', 'ia-message');
+            } else {
+                const respuestaFormateada = 'Resultados:\n' + JSON.stringify(resultados, null, 2);
+                addMessage(respuestaFormateada, 'ia-message', true);
+            }
+
+        } catch (error) {
+            console.error('Error en el proceso:', error);
+            document.querySelector('.ia-message:last-child').remove(); // Quita el "Pensando..."
+            addMessage(`Error: ${error.message}`, 'error-message');
+        }
+    }
+</script>
+
+</body>
+</html>
