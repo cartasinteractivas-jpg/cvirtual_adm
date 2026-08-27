@@ -13,3 +13,7 @@
 .module-checks { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; padding:12px; border:1px solid var(--line); border-radius:10px; background:#fff; }.module-checks label { display:flex; gap:6px; align-items:center; color:#4e575d; font-size:12px; font-weight:700; }.module-checks input { accent-color:var(--orange); }
 @keyframes admin-photo-rotate { 0%,27% { opacity:1; transform:scale(1.02); } 33%,100% { opacity:0; transform:scale(1.06); } }
 @media (prefers-reduced-motion: reduce) { .login-photo-rotation img { animation:none; opacity:0; }.login-photo-rotation .photo-1 { opacity:1; } }
+
+/* Plan Tienda Virtual: tarjeta operativa de alto contraste dentro del editor editorial del panel. */
+.commerce-control { display:flex; align-items:center; justify-content:space-between; gap:16px; margin:16px 0; padding:15px; border:1px solid #f4b498; border-radius:12px; background:linear-gradient(135deg,#fff4ef,#fffdf8); }.commerce-control b { color:var(--ink); font-size:13px; }.commerce-control p { margin:4px 0 0; }.switch-row { display:flex; align-items:center; gap:8px; white-space:nowrap; font-size:12px; font-weight:800; color:var(--ink); }.switch-row input { accent-color:var(--orange); }
+@media (max-width:520px) { .commerce-control { align-items:flex-start; flex-direction:column; } }

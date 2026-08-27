@@ -75,3 +75,40 @@ function showClientEdit(p){openModal(`<span class="kicker">Datos del cliente</sp
 async function loadQr(id){const el=document.querySelector("#qr-result"); const {data,error}=await supabase.rpc("get_my_qr",{p_candidate_id:id});el.className="notice "+(error?"error":"success");el.innerHTML=error?escape(error.message):`<b>Enlace del QR:</b><br><a href="${escape(data.url)}" target="_blank" rel="noreferrer">${escape(data.url)}</a>`;} async function requestAccess(){const {error}=await supabase.rpc("request_client_profile_access",{p_email:state.user.email});notify(error?error.message:"Solicitud enviada al administrador.",error?"error":"success");} async function reviewAccess(requestId,approved){const {error}=await supabase.rpc("admin_grant_client_profile_access",{p_request_id:requestId,p_approve:approved});notify(error?error.message:(approved?"Cuenta vinculada al perfil.":"Solicitud rechazada."),error?"error":"success");if(!error)await loadPortal();}
 function showPasswordModal(force=false){openModal(`<span class="kicker">${force?"Primer ingreso":"Seguridad"}</span><h2>${force?"Protege tu cuenta.":"Cambia tu contraseña."}</h2><p class="hint">${force?"Tu DNI fue la clave inicial. Define una contraseña nueva antes de continuar.":"Usa una contraseña de al menos 8 caracteres."}</p><form id="password-form" onsubmit="return false"><div class="field"><label>Nueva contraseña</label><input required minlength="8" type="password" name="password" placeholder="Mínimo 8 caracteres"></div><button type="button" class="primary full" id="save-password">Actualizar contraseña</button></form>`,()=>{if(force)document.querySelector(".modal-close")?.remove();const form=document.querySelector("#password-form");const save=document.querySelector("#save-password");const applyPassword=async()=>{const password=String(new FormData(form).get("password")||"");if(password.length<8)return notify("La nueva contraseña debe tener al menos 8 caracteres.","error");save.disabled=true;save.textContent="Actualizando…";const {data,error}=await supabase.auth.updateUser({password,data:{...(state.user?.user_metadata||{}),force_password_change:false}});if(error){save.disabled=false;save.textContent="Actualizar contraseña";return notify(error.message,"error");}state.user=data.user||state.user;state.firstLogin=false;document.querySelector(".modal-backdrop")?.remove();notify("Contraseña actualizada. Tu cuenta quedó protegida.","success");await loadPortal();};form.onsubmit=e=>{e.preventDefault();applyPassword();};save.onclick=applyPassword;});}
 bootstrap();
+
+// Extensión comercial: conserva el panel oscuro existente y añade el plan Tienda virtual sin cambiar los flujos de QR ni de video.
+const renderAdminBase = renderAdmin;
+renderAdmin = function () {
+  renderAdminBase();
+  if (!state.staff || state.view !== "home") return;
+  const servicePanel = [...document.querySelectorAll(".panel-card")].find((panel) => panel.querySelector("h3")?.textContent.trim() === "Reglas de servicio");
+  if (!servicePanel || servicePanel.querySelector("[data-store-prices]")) return;
+  servicePanel.insertAdjacentHTML("beforeend", `<div data-store-prices><div class="status-line"><span>Tienda virtual · creación</span><b>S/ 60</b></div><div class="status-line"><span>Tienda virtual · mantenimiento</span><b>S/ 30</b></div></div>`);
+};
+
+const showPresentationModalBase = showPresentationModal;
+showPresentationModal = function (profile) {
+  showPresentationModalBase(profile);
+  const form = document.querySelector("#presentation-form");
+  const briefField = form?.querySelector('textarea[name="brief"]')?.closest(".field");
+  if (!form || !briefField || form.elements.store_plan) return;
+  briefField.insertAdjacentHTML("beforebegin", `<section class="commerce-control"><div><b>Tienda virtual</b><p class="hint">Hasta 10 productos. Creación S/ 60 y mantenimiento S/ 30.</p></div><label class="switch-row"><input type="checkbox" name="store_plan"> Activar tienda</label></section>`);
+};
+
+const savePresentationBase = savePresentation;
+savePresentation = async function (candidateId, form) {
+  const isStorePlan = Boolean(form.elements.store_plan?.checked);
+  if (isStorePlan) {
+    const { error } = await supabase.rpc("admin_set_commerce_plan", { p_candidate_id: candidateId, p_is_store_plan: true, p_product_limit: 10 });
+    if (error) return notify(`No se pudo activar la tienda: ${error.message}. Ejecuta primero 006_store_plan.sql.`, "error");
+  }
+  return savePresentationBase(candidateId, form);
+};
+
+const showProfileModalBase = showProfileModal;
+showProfileModal = function (profile) {
+  showProfileModalBase(profile);
+  const select = document.querySelector("#service-type");
+  if (!select || select.querySelector('option[value="store_setup"]')) return;
+  select.insertAdjacentHTML("beforeend", `<option value="store_setup">Tienda virtual · creación — S/ 60</option><option value="store_maintenance">Tienda virtual · mantenimiento — S/ 30</option>`);
+};
