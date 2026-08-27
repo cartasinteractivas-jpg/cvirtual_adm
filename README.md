@@ -1,6 +1,6 @@
 # CVirtual Administración
 
-`cvirtual_adm` es la segunda aplicación del sistema. El cliente inicia sesión con correo y contraseña para actualizar únicamente su información, disponibilidad y contraseña. El administrador controla la relación de cuentas, pagos, renovaciones, videos editados y publicación del QR.
+`cvirtual_adm` es la segunda aplicación del sistema. El cliente inicia sesión con su **DNI de 8 dígitos** y la clave temporal recibida al registrarse; al entrar puede cambiarla. El administrador usa correo y contraseña. Ambos flujos controlan perfiles, pagos, renovaciones, videos editados y disponibilidad del QR según sus permisos.
 
 ## Seguridad de acceso
 
@@ -26,7 +26,7 @@ En **Authentication → Providers**, habilita el proveedor **Email**. En **Authe
 https://cartasinteractivas-jpg.github.io/cvirtual_adm/
 ```
 
-Cuando un cliente pulse **Activar mi acceso**, debe escribir el mismo correo utilizado al registrar su currículo. Su solicitud aparece para aprobación administrativa antes de que pueda modificar el perfil asociado.
+El nuevo registro público entrega el DNI como usuario y una clave temporal aleatoria visible una sola vez. El cliente debe guardarla, entrar y cambiarla. Para perfiles anteriores sin DNI, el administrador puede mantener el vínculo por correo mediante la tabla de solicitudes incluida en `003_cvirtual_adm.sql`.
 
 ## Precio y renovación
 
