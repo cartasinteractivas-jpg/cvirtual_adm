@@ -4,7 +4,7 @@
 
 ## Seguridad de acceso
 
-La aplicación usa **Supabase Auth con correo y contraseña**. No contiene contraseñas fijas, claves `service_role` ni tokens privados. El texto `Admin2026` debe utilizarse solo como contraseña temporal en el panel **Authentication → Users** de Supabase al crear tu usuario administrador; después debes cambiarla desde el panel de cliente o Supabase Auth.
+La aplicación usa **Supabase Auth con correo y contraseña**. No contiene contraseñas fijas, claves `service_role` ni tokens privados. La cuenta administrativa inicial se gestiona desde **Authentication → Users** y su contraseña temporal debe cambiarse desde el panel o Supabase Auth; no debe anotarse en el repositorio.
 
 > Para acceder como administrador, primero crea un usuario con tu correo real en Supabase Authentication. Luego ejecuta el bloque final de `003_cvirtual_adm.sql` cambiando `TU_CORREO_ADMIN@EJEMPLO.COM` por ese correo. Eso asigna el rol `admin` de forma segura.
 
@@ -15,6 +15,9 @@ La aplicación usa **Supabase Auth con correo y contraseña**. No contiene contr
 | 1 | `001_cv_virtual_schema.sql` | Tablas centrales, QR, pagos y roles. |
 | 2 | `002_supabase_storage_media.sql` | Buckets privados para foto y video. |
 | 3 | `003_cvirtual_adm.sql` | Acceso de clientes, pagos de servicio, QR y videos editados. |
+| 4 | [`005_dynamic_profiles.sql`](https://github.com/cartasinteractivas-jpg/cv/blob/main/supabase/005_dynamic_profiles.sql) | Perfiles temáticos, módulos, catálogo y destino QR hacia `cv`. |
+| 5 | [`006_store_plan.sql`](https://github.com/cartasinteractivas-jpg/cv/blob/main/supabase/006_store_plan.sql) | Plan de tienda, límite técnico de 10 productos y tarifas. |
+| 6 | [`007_store_product_images.sql`](https://github.com/cartasinteractivas-jpg/cv/blob/main/supabase/007_store_product_images.sql) | Bucket público de imágenes de producto con escritura limitada al equipo. |
 
 El archivo `003_cvirtual_adm.sql` se entrega en esta carpeta. Los dos anteriores corresponden al proyecto de registro ya creado.
 
@@ -35,8 +38,14 @@ El nuevo registro público entrega el DNI como usuario y una clave temporal alea
 | Alta inicial | S/ 40 | Registra el servicio y otorga seis meses de vigencia. |
 | Renovación | S/ 20 | Extiende la fecha de vencimiento seis meses. |
 | Cambio de video | S/ 10 | Registra el servicio; no altera la fecha de vencimiento. |
+| Tienda virtual: creación | S/ 60 | Activa el catálogo de hasta 10 productos y extiende la vigencia seis meses. |
+| Tienda virtual: mantenimiento | S/ 30 | Conserva el plan comercial y extiende la vigencia seis meses. |
 
 El administrador registra los servicios pagados desde la ficha del cliente. La web no procesa tarjetas ni Yape automáticamente: conserva el control manual de verificación.
+
+## Tienda virtual y catálogo
+
+Desde **Tema y módulos**, el administrador activa la modalidad **Tienda virtual**. Luego, desde **Gestionar catálogo** en la ficha del perfil, carga una imagen clara, nombre, precio, categoría y descripción por cada artículo. El sistema bloquea el artículo número 11: el máximo es de **10 productos por tienda**. Las imágenes de catálogo se almacenan en Supabase Storage en el bucket público `store-product-images`; solo los roles administrativos pueden agregar o eliminar esos archivos.
 
 ## Flujo de video y QR
 
