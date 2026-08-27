@@ -25,13 +25,13 @@ async function loadPortal() {
   state.staff = Boolean(roles?.some(r => r.role === "admin" || r.role === "publisher" || r.role === "finance" || r.role === "reviewer"));
   if (state.staff) {
     const [profiles, notifications, accessRequests] = await Promise.all([
-      supabase.from("candidate_profiles").select("id,dni,first_name,last_name,display_name,headline,email,whatsapp_phone,public_whatsapp_phone,profile_kind,presentation_theme,status,expires_at,created_at,candidate_qr_codes(token,is_active),candidate_payments(amount,payment_status,service_type,created_at),candidate_media(id,media_type,media_status,visibility,is_background,uploaded_at)").order("created_at", {ascending:false}),
+      supabase.from("candidate_profiles").select("id,dni,first_name,last_name,display_name,headline,email,whatsapp_phone,public_whatsapp_phone,profile_kind,presentation_theme,status,expires_at,created_at,candidate_qr_codes(token,is_active),candidate_payments(amount,payment_status,service_type,created_at),candidate_media(id,media_type,media_status,visibility,is_background,uploaded_at),profile_commerce_settings(is_store_plan,product_limit)").order("created_at", {ascending:false}),
       supabase.from("admin_notifications").select("id,title,body,is_read,created_at,candidate_id").order("created_at", {ascending:false}).limit(12),
       supabase.from("client_profile_access_requests").select("id,candidate_id,user_id,email,request_status,created_at,candidate_profiles(first_name,last_name,display_name)").eq("request_status","pending").order("created_at", {ascending:false})
     ]);
     state.profiles = profiles.data || []; state.notifications = notifications.data || []; state.accessRequests = accessRequests.data || [];
   } else {
-    const { data } = await supabase.from("candidate_profiles").select("*,candidate_qr_codes(token,is_active),candidate_payments(id,amount,payment_status,service_type,created_at),candidate_media(id,media_type,media_status,visibility,is_background,uploaded_at)").eq("owner_user_id", state.user.id).maybeSingle();
+    const { data } = await supabase.from("candidate_profiles").select("*,candidate_qr_codes(token,is_active),candidate_payments(id,amount,payment_status,service_type,created_at),candidate_media(id,media_type,media_status,visibility,is_background,uploaded_at),profile_commerce_settings(is_store_plan,product_limit)").eq("owner_user_id", state.user.id).maybeSingle();
     state.own = data || null;
   }
   renderApp();
@@ -92,16 +92,15 @@ showPresentationModal = function (profile) {
   const form = document.querySelector("#presentation-form");
   const briefField = form?.querySelector('textarea[name="brief"]')?.closest(".field");
   if (!form || !briefField || form.elements.store_plan) return;
-  briefField.insertAdjacentHTML("beforebegin", `<section class="commerce-control"><div><b>Tienda virtual</b><p class="hint">Hasta 10 productos. Creación S/ 60 y mantenimiento S/ 30.</p></div><label class="switch-row"><input type="checkbox" name="store_plan"> Activar tienda</label></section>`);
+  const hasStorePlan = Boolean(profile.profile_commerce_settings?.[0]?.is_store_plan);
+  briefField.insertAdjacentHTML("beforebegin", `<section class="commerce-control"><div><b>Tienda virtual</b><p class="hint">Hasta 10 productos. Creación S/ 60 y mantenimiento S/ 30.</p></div><label class="switch-row"><input type="checkbox" name="store_plan" ${hasStorePlan ? "checked" : ""}> Activar tienda</label></section>`);
 };
 
 const savePresentationBase = savePresentation;
 savePresentation = async function (candidateId, form) {
   const isStorePlan = Boolean(form.elements.store_plan?.checked);
-  if (isStorePlan) {
-    const { error } = await supabase.rpc("admin_set_commerce_plan", { p_candidate_id: candidateId, p_is_store_plan: true, p_product_limit: 10 });
-    if (error) return notify(`No se pudo activar la tienda: ${error.message}. Ejecuta primero 006_store_plan.sql.`, "error");
-  }
+  const { error } = await supabase.rpc("admin_set_commerce_plan", { p_candidate_id: candidateId, p_is_store_plan: isStorePlan, p_product_limit: 10 });
+  if (error) return notify(`No se pudo guardar el plan de tienda: ${error.message}. Ejecuta primero 006_store_plan.sql.`, "error");
   return savePresentationBase(candidateId, form);
 };
 
