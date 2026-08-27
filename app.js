@@ -25,16 +25,28 @@ async function loadPortal() {
   state.staff = Boolean(roles?.some(r => r.role === "admin" || r.role === "publisher" || r.role === "finance" || r.role === "reviewer"));
   if (state.staff) {
     const [profiles, notifications, accessRequests] = await Promise.all([
-      supabase.from("candidate_profiles").select("id,dni,first_name,last_name,display_name,headline,email,whatsapp_phone,public_whatsapp_phone,profile_kind,presentation_theme,status,expires_at,created_at,candidate_qr_codes(token,is_active),candidate_payments(amount,payment_status,service_type,created_at),candidate_media(id,media_type,media_status,visibility,is_background,uploaded_at),profile_commerce_settings(is_store_plan,product_limit)").order("created_at", {ascending:false}),
+      loadAdminProfiles(),
       supabase.from("admin_notifications").select("id,title,body,is_read,created_at,candidate_id").order("created_at", {ascending:false}).limit(12),
       supabase.from("client_profile_access_requests").select("id,candidate_id,user_id,email,request_status,created_at,candidate_profiles(first_name,last_name,display_name)").eq("request_status","pending").order("created_at", {ascending:false})
     ]);
     state.profiles = profiles.data || []; state.notifications = notifications.data || []; state.accessRequests = accessRequests.data || [];
   } else {
-    const { data } = await supabase.from("candidate_profiles").select("*,candidate_qr_codes(token,is_active),candidate_payments(id,amount,payment_status,service_type,created_at),candidate_media(id,media_type,media_status,visibility,is_background,uploaded_at),profile_commerce_settings(is_store_plan,product_limit)").eq("owner_user_id", state.user.id).maybeSingle();
+    const { data } = await loadOwnProfile();
     state.own = data || null;
   }
   renderApp();
+}
+const adminProfileFields = "id,dni,first_name,last_name,display_name,headline,email,whatsapp_phone,public_whatsapp_phone,profile_kind,presentation_theme,status,expires_at,created_at,candidate_qr_codes(token,is_active),candidate_payments(amount,payment_status,service_type,created_at),candidate_media(id,media_type,media_status,visibility,is_background,uploaded_at)";
+const ownProfileFields = "*,candidate_qr_codes(token,is_active),candidate_payments(id,amount,payment_status,service_type,created_at),candidate_media(id,media_type,media_status,visibility,is_background,uploaded_at)";
+async function loadAdminProfiles() {
+  const withCommerce = await supabase.from("candidate_profiles").select(`${adminProfileFields},profile_commerce_settings(is_store_plan,product_limit)`).order("created_at", {ascending:false});
+  if (!withCommerce.error) return withCommerce;
+  return supabase.from("candidate_profiles").select(adminProfileFields).order("created_at", {ascending:false});
+}
+async function loadOwnProfile() {
+  const withCommerce = await supabase.from("candidate_profiles").select(`${ownProfileFields},profile_commerce_settings(is_store_plan,product_limit)`).eq("owner_user_id", state.user.id).maybeSingle();
+  if (!withCommerce.error) return withCommerce;
+  return supabase.from("candidate_profiles").select(ownProfileFields).eq("owner_user_id", state.user.id).maybeSingle();
 }
 function renderConfigError() { root.innerHTML = `<main class="loading"><div><b>Falta configurar Supabase.</b><p>Revisa config.js con la URL y clave pública.</p></div></main>`; }
 function loginShell(inner) { root.innerHTML = `<main class="login-shell"><section class="login-story"><div class="login-photo-rotation" aria-hidden="true">${adminScenePhotos.map((src,index)=>`<img src="${src}" class="photo-${index + 1}" alt="">`).join("")}</div><div class="login-ink" aria-hidden="true"></div><div class="brand"><span class="brand-mark"></span><span>CVirtual<small>CONTROL DE PERFIL Y QR</small></span></div><div class="story-copy"><span class="kicker">Panel de relación</span><h1>Tu perfil,<br><em>bajo control.</em></h1><p>Actualiza tu información, consulta la renovación y conserva la disponibilidad de tu QR. El equipo revisa y publica el video final.</p></div><span class="case-code">Acceso protegido por Supabase Auth</span></section><section class="login-card">${inner}</section></main>`; bindAuth(); }
