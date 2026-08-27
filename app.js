@@ -123,3 +123,52 @@ showProfileModal = function (profile) {
   if (!select || select.querySelector('option[value="store_setup"]')) return;
   select.insertAdjacentHTML("beforeend", `<option value="store_setup">Tienda virtual · creación — S/ 60</option><option value="store_maintenance">Tienda virtual · mantenimiento — S/ 30</option>`);
 };
+
+// Catálogo comercial: imágenes públicas de productos solo se administran desde este panel.
+const showProfileModalWithStore = showProfileModal;
+showProfileModal = function (profile) {
+  showProfileModalWithStore(profile);
+  const actions = document.querySelector(".modal-backdrop .row-actions");
+  if (!actions || actions.querySelector("#manage-catalog")) return;
+  actions.insertAdjacentHTML("afterbegin", `<button class="secondary" id="manage-catalog">Gestionar catálogo</button>`);
+  document.querySelector("#manage-catalog").onclick = () => showCatalogModal(profile);
+};
+
+async function showCatalogModal(profile) {
+  const commerce = profile.profile_commerce_settings?.[0];
+  if (!commerce?.is_store_plan) return notify("Activa Tienda virtual desde Tema y módulos antes de agregar productos.", "error");
+  const limit = Number(commerce.product_limit || 10);
+  const { data: products, error } = await supabase.from("profile_products").select("id,name,description,price,currency,image_url,category,is_available,display_order").eq("candidate_id", profile.id).order("display_order", { ascending: true });
+  if (error) return notify(`No se pudo cargar el catálogo: ${error.message}`, "error");
+  const productRows = (products || []).map((product) => `<article class="catalog-row"><img src="${escape(product.image_url || "")}" alt="${escape(product.name)}" onerror="this.style.visibility='hidden'"><div><b>${escape(product.name)}</b><small>${escape(product.category || "Producto")}</small><p>${escape(product.description || "Sin descripción")}</p><strong>${money(product.price)} ${escape(product.currency || "PEN")}</strong></div><button class="danger small-button" data-delete-product="${product.id}">Eliminar</button></article>`).join("") || `<p class="hint">Todavía no hay productos. Agrega el primero con una foto clara.</p>`;
+  const canAdd = (products || []).length < limit;
+  openModal(`<span class="kicker">Tienda virtual</span><h2>Catálogo: ${(products || []).length}/${limit}</h2><p class="hint">Solo los artículos disponibles aparecen en el QR del negocio. Las imágenes se publican para que los clientes puedan verlas.</p><section class="catalog-list">${productRows}</section>${canAdd ? `<form id="catalog-form"><div class="field"><label>Foto clara del producto</label><input required name="image" type="file" accept="image/jpeg,image/png,image/webp"></div><div class="grid-two"><div class="field"><label>Nombre</label><input required maxlength="120" name="name" placeholder="Ej. Pizza napolitana"></div><div class="field"><label>Precio (S/)</label><input required min="0" step="0.01" type="number" name="price" placeholder="32.00"></div></div><div class="grid-two"><div class="field"><label>Categoría</label><input name="category" placeholder="Pizzas"></div><div class="field"><label>Orden</label><input name="display_order" type="number" min="0" value="${(products || []).length}"></div></div><div class="field"><label>Descripción</label><textarea name="description" rows="2" placeholder="Ingredientes, tamaño o detalle importante."></textarea></div><button class="primary full" type="submit">Agregar producto</button></form>` : `<div class="notice info">La tienda ya alcanzó el máximo de ${limit} productos. Elimina uno antes de agregar otro.</div>`}`, () => {
+    const form = document.querySelector("#catalog-form");
+    if (form) form.onsubmit = async (event) => { event.preventDefault(); await addCatalogProduct(profile.id, form, (products || []).length, limit); };
+    document.querySelectorAll("[data-delete-product]").forEach((button) => button.onclick = async () => {
+      if (!confirm("¿Eliminar este producto del catálogo?")) return;
+      const { error: deleteError } = await supabase.from("profile_products").delete().eq("id", button.dataset.deleteProduct).eq("candidate_id", profile.id);
+      if (deleteError) return notify(deleteError.message, "error");
+      document.querySelectorAll(".modal-backdrop").forEach((layer) => layer.remove());
+      notify("Producto eliminado.", "success");
+      await loadPortal();
+    });
+  });
+}
+
+async function addCatalogProduct(candidateId, form, currentCount, limit) {
+  if (currentCount >= limit) return notify(`La tienda permite como máximo ${limit} productos.`, "error");
+  const fields = new FormData(form); const image = fields.get("image");
+  if (!(image instanceof File) || !image.size) return notify("Selecciona una imagen clara del producto.", "error");
+  if (image.size > 5242880) return notify("La imagen debe pesar menos de 5 MB.", "error");
+  const safeName = image.name.replace(/[^a-zA-Z0-9._-]/g, "-");
+  const path = `${candidateId}/${Date.now()}-${safeName}`;
+  const { error: uploadError } = await supabase.storage.from("store-product-images").upload(path, image, { contentType: image.type, upsert: false });
+  if (uploadError) return notify(`No se pudo subir la imagen: ${uploadError.message}. Ejecuta 007_store_product_images.sql.`, "error");
+  const { data: urlData } = supabase.storage.from("store-product-images").getPublicUrl(path);
+  const { error: insertError } = await supabase.from("profile_products").insert({ candidate_id: candidateId, name: fields.get("name"), description: fields.get("description") || null, price: Number(fields.get("price")), currency: "PEN", image_url: urlData.publicUrl, category: fields.get("category") || null, display_order: Number(fields.get("display_order") || currentCount), is_available: true });
+  if (insertError) return notify(`La imagen se cargó, pero no se pudo crear el producto: ${insertError.message}`, "error");
+  document.querySelectorAll(".modal-backdrop").forEach((layer) => layer.remove());
+  notify("Producto agregado al catálogo público.", "success");
+  await loadPortal();
+}
