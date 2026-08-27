@@ -18,6 +18,7 @@ La aplicación usa **Supabase Auth con correo y contraseña**. No contiene contr
 | 4 | [`005_dynamic_profiles.sql`](https://github.com/cartasinteractivas-jpg/cv/blob/main/supabase/005_dynamic_profiles.sql) | Perfiles temáticos, módulos, catálogo y destino QR hacia `cv`. |
 | 5 | [`006_store_plan.sql`](https://github.com/cartasinteractivas-jpg/cv/blob/main/supabase/006_store_plan.sql) | Plan de tienda, límite técnico de 10 productos y tarifas. |
 | 6 | [`007_store_product_images.sql`](https://github.com/cartasinteractivas-jpg/cv/blob/main/supabase/007_store_product_images.sql) | Bucket público de imágenes de producto con escritura limitada al equipo. |
+| 7 | [`008_single_screen_content.sql`](https://github.com/cartasinteractivas-jpg/cv/blob/main/supabase/008_single_screen_content.sql) | Servicios, enlaces de YouTube y opiniones verificables para la vista móvil de pantalla única. |
 
 El archivo `003_cvirtual_adm.sql` se entrega en esta carpeta. Los dos anteriores corresponden al proyecto de registro ya creado.
 
@@ -50,6 +51,10 @@ Desde **Tema y módulos**, el administrador activa la modalidad **Tienda virtual
 ## Flujo de video y QR
 
 El cliente actualiza datos, pero no puede reemplazar el video público. El administrador recibe el material original del registro, lo edita, carga el resultado a `candidate-videos`, lo marca como listo y finalmente publica el perfil. El QR se habilita o deshabilita de forma independiente; un QR deshabilitado devuelve la pantalla de construcción.
+
+## Contenido en pantalla única
+
+Desde **Gestionar → Contenido y videos**, el equipo puede añadir servicios, trabajos realizados y enlaces HTTPS de YouTube. En **Tema y módulos** se activan los botones que verá el visitante sobre el video de fondo. El panel también permite guardar opiniones, pero exige un enlace de evidencia y una confirmación explícita de autorización; no se crean reseñas ni valoraciones de muestra.
 
 ## Publicación en GitHub Pages
 

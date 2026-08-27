@@ -61,7 +61,7 @@ function accessRequestsBlock() { if (!state.accessRequests.length) return ""; re
 function bindAdminActions() { const search=document.querySelector("#profile-search"); if(search) search.oninput=e=>{state.query=e.target.value;renderAdmin();}; document.querySelectorAll("[data-profile]").forEach(b=>b.onclick=()=>{const p=state.profiles.find(x=>x.id===b.dataset.profile); if(b.dataset.action==="qr") toggleQr(p); else if(b.dataset.action==="presentation") showPresentationModal(p); else showProfileModal(p);}); if(state.view === "notifications" && state.accessRequests.length) { document.querySelector(".content")?.insertAdjacentHTML("afterbegin",accessRequestsBlock()); document.querySelectorAll("[data-access]").forEach(b=>b.onclick=()=>reviewAccess(b.dataset.access,b.dataset.decision==="approve")); } }
 
 function injectPresentationButtons() { /* La acción Tema y módulos se renderiza por perfil en la tabla. */ }
-const presentationModules = ["about","experience","education","questions","portfolio","catalog","services","booking","whatsapp"];
+const presentationModules = ["about","experience","education","questions","portfolio","catalog","services","booking","whatsapp","videos","testimonials"];
 const profileKinds = [["professional","Profesional"],["restaurant","Restaurante / pizzería"],["business","Negocio local"],["automotive","Automotor"],["transport","Transporte"],["creative","Creativo"],["service","Servicio"]];
 function selectedTheme(p) { return p.presentation_theme || {}; }
 function showPresentationModal(p) {
@@ -171,4 +171,58 @@ async function addCatalogProduct(candidateId, form, currentCount, limit) {
   document.querySelectorAll(".modal-backdrop").forEach((layer) => layer.remove());
   notify("Producto agregado al catálogo público.", "success");
   await loadPortal();
+}
+
+// Contenido editorial de pantalla única: los datos se administran por perfil y solo se publican si el módulo está seleccionado.
+const showProfileModalWithEditorialContent = showProfileModal;
+showProfileModal = function (profile) {
+  showProfileModalWithEditorialContent(profile);
+  const actions = document.querySelector(".modal-backdrop .row-actions");
+  if (!actions || actions.querySelector("#manage-editorial-content")) return;
+  actions.insertAdjacentHTML("afterbegin", `<button class="secondary" id="manage-editorial-content">Contenido y videos</button>`);
+  document.querySelector("#manage-editorial-content").onclick = () => {
+    document.querySelector(".modal-backdrop")?.remove();
+    showEditorialContentModal(profile);
+  };
+};
+
+const editorialRows = (items, label, table, field) => (items || []).map(item => `<article class="editorial-row"><div><span class="mini-kicker">${escape(label)}</span><b>${escape(item[field] || "Sin título")}</b>${item.description ? `<p>${escape(item.description)}</p>` : ""}${item.quote ? `<p>“${escape(item.quote)}”</p>` : ""}${item.context ? `<small>${escape(item.context)}</small>` : ""}</div><button class="danger small-button" data-editorial-delete="${table}:${item.id}">Eliminar</button></article>`).join("");
+
+async function showEditorialContentModal(profile) {
+  const [works, services, videos, testimonials] = await Promise.all([
+    supabase.from("profile_work_items").select("id,title,description,external_url,metric_label,metric_value").eq("candidate_id", profile.id).order("display_order"),
+    supabase.from("profile_services").select("id,name,description,price_label").eq("candidate_id", profile.id).order("display_order"),
+    supabase.from("profile_video_links").select("id,title,description,youtube_url").eq("candidate_id", profile.id).order("display_order"),
+    supabase.from("profile_testimonials").select("id,author_name,quote,context,evidence_url,is_verified,is_public").eq("candidate_id", profile.id).order("display_order")
+  ]);
+  const missingSchema = [services, videos, testimonials].find(result => result.error);
+  if (missingSchema) return notify(`No se pudo cargar el contenido editorial: ${missingSchema.error.message}. Ejecuta primero 008_single_screen_content.sql.`, "error");
+  openModal(`<span class="kicker">Pantalla única</span><h2>Contenido del perfil</h2><p class="hint">Los botones del QR solo muestran los módulos que marques en “Tema y módulos”. Los testimonios requieren prueba y consentimiento.</p><section class="editorial-section"><h3>Servicios</h3><div class="editorial-list">${editorialRows(services.data, "Servicio", "profile_services", "name") || "<p class='hint'>Aún no hay servicios.</p>"}</div><form id="editorial-service"><div class="grid-two"><div class="field"><label>Servicio</label><input required maxlength="120" name="name" placeholder="Ej. Instalación a domicilio"></div><div class="field"><label>Precio visible</label><input maxlength="80" name="price_label" placeholder="Ej. Desde S/ 45"></div></div><div class="field"><label>Descripción</label><textarea name="description" rows="2" maxlength="600"></textarea></div><button class="secondary full">Agregar servicio</button></form></section><section class="editorial-section"><h3>Trabajos realizados</h3><div class="editorial-list">${editorialRows(works.data, "Trabajo", "profile_work_items", "title") || "<p class='hint'>Aún no hay trabajos publicados.</p>"}</div><form id="editorial-work"><div class="field"><label>Título del trabajo</label><input required maxlength="160" name="title" placeholder="Ej. Diagnóstico de sistema eléctrico"></div><div class="field"><label>Descripción</label><textarea name="description" rows="2" maxlength="1000"></textarea></div><div class="grid-two"><div class="field"><label>Resultado</label><input maxlength="80" name="metric_label" placeholder="Ej. vehículos atendidos"></div><div class="field"><label>Número</label><input type="number" step="0.01" name="metric_value" placeholder="Ej. 86"></div></div><button class="secondary full">Agregar trabajo</button></form></section><section class="editorial-section"><h3>Videos de YouTube</h3><div class="editorial-list">${editorialRows(videos.data, "YouTube", "profile_video_links", "title") || "<p class='hint'>Aún no hay videos aprobados.</p>"}</div><form id="editorial-video"><div class="field"><label>Título del video</label><input required maxlength="160" name="title" placeholder="Ej. Presentación del taller"></div><div class="field"><label>Enlace de YouTube</label><input required type="url" name="youtube_url" placeholder="https://www.youtube.com/watch?v=..."></div><div class="field"><label>Descripción</label><textarea name="description" rows="2" maxlength="600"></textarea></div><button class="secondary full">Agregar video</button></form></section><section class="editorial-section verified-editorial"><h3>Opiniones verificables</h3><div class="editorial-list">${editorialRows(testimonials.data, "Opinión aprobada", "profile_testimonials", "author_name") || "<p class='hint'>No hay opiniones verificables publicadas.</p>"}</div><form id="editorial-testimonial"><div class="field"><label>Nombre de quien opina</label><input required maxlength="120" name="author_name" placeholder="Nombre real o razón social autorizada"></div><div class="field"><label>Opinión textual</label><textarea required rows="3" maxlength="1000" name="quote" placeholder="Solo contenido real autorizado por su autor."></textarea></div><div class="grid-two"><div class="field"><label>Contexto</label><input maxlength="160" name="context" placeholder="Ej. Cliente de mantenimiento"></div><div class="field"><label>Enlace de evidencia</label><input required type="url" name="evidence_url" placeholder="https://..."></div></div><label class="verification-check"><input required type="checkbox" name="consent"> Confirmo que revisé la evidencia y tengo autorización para publicar esta opinión.</label><button class="secondary full">Publicar opinión verificada</button></form></section>`, () => {
+    document.querySelector("#editorial-service").onsubmit = event => saveEditorialItem(event, "profile_services", profile.id);
+    document.querySelector("#editorial-work").onsubmit = event => saveEditorialItem(event, "profile_work_items", profile.id);
+    document.querySelector("#editorial-video").onsubmit = event => saveEditorialItem(event, "profile_video_links", profile.id);
+    document.querySelector("#editorial-testimonial").onsubmit = event => saveEditorialItem(event, "profile_testimonials", profile.id);
+    document.querySelectorAll("[data-editorial-delete]").forEach(button => button.onclick = () => deleteEditorialItem(button.dataset.editorialDelete, profile));
+  });
+}
+
+function validYoutubeUrl(value) {
+  try { const url = new URL(value); return url.protocol === "https:" && ["youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be"].includes(url.hostname); } catch { return false; }
+}
+async function saveEditorialItem(event, table, candidateId) {
+  event.preventDefault(); const form = event.currentTarget, fields = new FormData(form);
+  if (table === "profile_video_links" && !validYoutubeUrl(String(fields.get("youtube_url") || ""))) return notify("Usa un enlace HTTPS válido de YouTube o youtu.be.", "error");
+  let payload = { candidate_id: candidateId, display_order: 0, is_public: true };
+  if (table === "profile_services") payload = { ...payload, name: fields.get("name"), description: fields.get("description") || null, price_label: fields.get("price_label") || null };
+  if (table === "profile_work_items") payload = { ...payload, title: fields.get("title"), description: fields.get("description") || null, metric_label: fields.get("metric_label") || null, metric_value: fields.get("metric_value") ? Number(fields.get("metric_value")) : null };
+  if (table === "profile_video_links") payload = { ...payload, title: fields.get("title"), description: fields.get("description") || null, youtube_url: fields.get("youtube_url") };
+  if (table === "profile_testimonials") payload = { ...payload, author_name: fields.get("author_name"), quote: fields.get("quote"), context: fields.get("context") || null, evidence_url: fields.get("evidence_url"), is_verified: true, consent_confirmed_at: new Date().toISOString(), verified_by: state.user.id, verification_note: "Confirmado desde cvirtual_adm" };
+  const { error } = await supabase.from(table).insert(payload);
+  if (error) return notify(error.message, "error");
+  document.querySelector(".modal-backdrop")?.remove(); notify("Contenido editorial guardado.", "success"); await loadPortal();
+}
+async function deleteEditorialItem(ref, profile) {
+  const [table, id] = String(ref).split(":"); if (!confirm("¿Eliminar este contenido del perfil?")) return;
+  const { error } = await supabase.from(table).delete().eq("id", id).eq("candidate_id", profile.id);
+  if (error) return notify(error.message, "error"); document.querySelector(".modal-backdrop")?.remove(); notify("Contenido eliminado.", "success"); await loadPortal();
 }
