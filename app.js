@@ -41,8 +41,17 @@ const adminProfileFields = "id,dni,first_name,last_name,display_name,headline,em
 const ownProfileFields = "*,candidate_qr_codes(token,is_active),candidate_payments(id,amount,payment_status,service_type,created_at),candidate_media(id,media_type,media_status,visibility,is_background,uploaded_at)";
 async function loadAdminProfiles() {
   const withCommerce = await supabase.from("candidate_profiles").select(`${adminProfileFields},profile_commerce_settings(is_store_plan,product_limit)`).order("created_at", {ascending:false});
-  if (!withCommerce.error) return withCommerce;
-  return supabase.from("candidate_profiles").select(adminProfileFields).order("created_at", {ascending:false});
+  const result = withCommerce.error ? await supabase.from("candidate_profiles").select(adminProfileFields).order("created_at", {ascending:false}) : withCommerce;
+  if (result.error || !result.data?.length) return result;
+  const profiles = await Promise.all(result.data.map(async (profile) => {
+    const { data, error } = await supabase.rpc("admin_get_qr", { p_candidate_id: profile.id });
+    if (!error && data?.token) {
+      const stored = profile.candidate_qr_codes?.[0] || {};
+      profile.candidate_qr_codes = [{ ...stored, token: data.token, is_active: data.is_active === true || data.is_active === "true" }];
+    }
+    return profile;
+  }));
+  return { ...result, data: profiles };
 }
 async function loadOwnProfile() {
   const withCommerce = await supabase.from("candidate_profiles").select(`${ownProfileFields},profile_commerce_settings(is_store_plan,product_limit)`).eq("owner_user_id", state.user.id).maybeSingle();
