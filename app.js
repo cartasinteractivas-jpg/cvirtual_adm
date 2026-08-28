@@ -79,7 +79,7 @@ function showPresentationModal(p) {
 function readPresentation(form) { const f=new FormData(form); return { kind:f.get("kind"), themeId:f.get("theme_id")||"editorial_lima", navigationStyle:f.get("navigation_style")||"top_capsule", videoSource:f.get("video_source")||"uploaded", backgroundYoutubeUrl:String(f.get("background_youtube_url")||"").trim(), whatsapp:String(f.get("whatsapp")||"").replace(/\D/g,""), theme:{name:f.get("theme_name"),background:f.get("background"),primary:f.get("primary"),accent:f.get("accent")}, modules:[...form.querySelectorAll('[name="profile-module"]:checked')].map(node=>node.value) }; }
 async function requestStyleRecommendation(candidateId, form) { const brief=String(new FormData(form).get("brief")||"").trim(); if(!brief) return notify("Escribe primero una descripción del rubro.","error"); const button=document.querySelector("#request-style"); button.disabled=true; button.textContent="Consultando criterio…"; const {data,error}=await supabase.functions.invoke("style-advisor",{body:{candidateId,brief,requestedKind:new FormData(form).get("kind")}}); button.disabled=false; button.textContent="Proponer diseño con IA"; if(error||data?.error) return notify(data?.error||error.message||"No se pudo consultar la IA. Despliega la función style-advisor y configura su clave.","error"); form.elements.kind.value=data.kind||form.elements.kind.value; const theme=data.theme||{}; form.elements.theme_name.value=theme.name||""; form.elements.primary.value=theme.primary||""; form.elements.background.value=theme.background||""; form.elements.accent.value=theme.accent||""; form.querySelectorAll('[name="profile-module"]').forEach(check=>check.checked=(data.modules||[]).includes(check.value)); notify("Propuesta cargada. Revísala y pulsa Guardar presentación.","success"); }
 async function savePresentation(candidateId, form) { const value=readPresentation(form), theme={...value.theme,theme_id:value.themeId}; const {error}=await supabase.rpc("admin_apply_profile_presentation",{p_candidate_id:candidateId,p_kind:value.kind,p_theme:theme,p_whatsapp:value.whatsapp||null}); if(error) return notify(error.message,"error"); const {error:videoError}=await supabase.rpc("admin_set_presentation_video_source",{p_candidate_id:candidateId,p_theme_id:value.themeId,p_video_source:value.videoSource,p_youtube_url:value.backgroundYoutubeUrl||null}); if(videoError) return notify(`${videoError.message}. Ejecuta primero 013_themes_video_map_and_pricing.sql.`,"error"); const {error:navigationError}=await supabase.rpc("admin_set_navigation_style",{p_candidate_id:candidateId,p_navigation_style:value.navigationStyle}); if(navigationError) return notify(`${navigationError.message}. Ejecuta primero 009_navigation_and_interactions.sql.`,"error"); const {error:deleteError}=await supabase.from("profile_modules").delete().eq("candidate_id",candidateId); if(deleteError) return notify(deleteError.message,"error"); if(value.modules.length){const {error:insertError}=await supabase.from("profile_modules").insert(value.modules.map((module,index)=>({candidate_id:candidateId,module_key:module,is_enabled:true,display_order:index}))); if(insertError)return notify(insertError.message,"error");} document.querySelector(".modal-backdrop")?.remove(); notify("Presentación guardada. Puedes continuar con aprobación, video y publicación.","success"); await loadPortal(); }
-async function toggleQr(p) { const enabled=!p.candidate_qr_codes?.[0]?.is_active; if(!confirm(`${enabled?"Habilitar":"Deshabilitar"} el QR de ${p.display_name||p.first_name}?`)) return; const {error}=await supabase.rpc("admin_set_qr_enabled",{p_candidate_id:p.id,p_enabled:enabled}); if(error) return notify(error.message,"error"); notify(`QR ${enabled?"habilitado":"deshabilitado"}.`,"success"); await loadPortal(); }
+async function toggleQr(p) { const enabled=!p.candidate_qr_codes?.[0]?.is_active; if(!confirm(`${enabled?"Habilitar":"Deshabilitar"} el QR de ${p.display_name||p.first_name}?`)) return; const {data,error}=await supabase.rpc("admin_set_qr_enabled",{p_candidate_id:p.id,p_enabled:enabled}); if(error) return notify(error.message,"error"); const applied=Boolean(data?.is_active); if(p.candidate_qr_codes?.[0]) p.candidate_qr_codes[0].is_active=applied; notify(`QR ${applied?"habilitado":"deshabilitado"}.`,"success"); await loadPortal(); }
 function showProfileModal(p) { const media=p.candidate_media||[]; openModal(`<span class="kicker">Expediente</span><h2>${escape(p.display_name||`${p.first_name} ${p.last_name}`)}</h2><p class="hint">${escape(p.email)} · ${escape(p.headline||"Sin titular profesional")}</p><section class="qr-control"><div><span class="mini-kicker">Identificación del perfil</span><b>QR personal del cliente</b><p class="hint">Guárdalo, descárgalo o comparte el enlace. El estado público sigue dependiendo de pago, aprobación y publicación.</p></div><div id="admin-qr-result" class="qr-result compact">Consultando QR…</div></section><div class="grid-two"><div><div class="field"><label>Servicio de pago</label><select id="service-type"><option value="renewal_6m">Renovación 6 meses — S/ 20</option><option value="video_change">Cambio de video — S/ 10</option><option value="initial_registration">Alta inicial — S/ 40</option></select></div><button class="primary full" id="record-payment">Registrar pago validado</button></div><div class="video-upload"><b>Subir video editado</b><p class="hint">MP4, WEBM o MOV. El archivo se guarda privado y queda listo para publicar.</p><input id="edited-video" type="file" accept="video/mp4,video/webm,video/quicktime"><button class="secondary full" id="upload-video" style="margin-top:10px">Guardar video editado</button></div></div><div class="status-line"><span>Medios registrados</span><b>${media.length}</b></div><div class="status-line"><span>Vigencia actual</span><b>${date(p.expires_at)}</b></div><div class="status-line"><span>Estado público</span>${statusPill(p.status)}</div><div class="row-actions" style="margin-top:16px"><button class="secondary" id="approve-profile">Aprobar perfil</button><button class="primary" id="publish-profile">Publicar perfil</button><button class="danger" id="unpublish-profile">Ocultar perfil</button></div>`, async () => { document.querySelector("#record-payment").onclick=()=>recordPayment(p.id); document.querySelector("#upload-video").onclick=()=>uploadEditedVideo(p.id); document.querySelector("#approve-profile").onclick=()=>reviewProfile(p.id,true); document.querySelector("#publish-profile").onclick=()=>publishProfile(p.id); document.querySelector("#unpublish-profile").onclick=()=>unpublishProfile(p.id); await loadQr(p.id,"#admin-qr-result"); }); }
 function openModal(html, bind) { const layer=document.createElement("div"); layer.className="modal-backdrop"; layer.innerHTML=`<section class="modal"><header><div>${html}</div><button class="modal-close" aria-label="Cerrar">×</button></header></section>`; document.body.append(layer); layer.querySelector(".modal-close").onclick=()=>layer.remove(); bind?.(); }
 async function recordPayment(candidateId) { const type=document.querySelector("#service-type").value; const {error}=await supabase.rpc("admin_record_service_payment",{p_candidate_id:candidateId,p_service_type:type}); if(error) return notify(error.message,"error"); document.querySelector(".modal-backdrop")?.remove(); notify("Pago registrado y vigencia actualizada.","success"); await loadPortal(); }
@@ -99,7 +99,7 @@ renderAdmin = function () {
   if (!state.staff || state.view !== "home") return;
   const servicePanel = [...document.querySelectorAll(".panel-card")].find((panel) => panel.querySelector("h3")?.textContent.trim() === "Reglas de servicio");
   if (!servicePanel || servicePanel.querySelector("[data-store-prices]")) return;
-  servicePanel.insertAdjacentHTML("beforeend", `<div data-store-prices><div class="status-line"><span>Tienda virtual · creación</span><b>S/ 60</b></div><div class="status-line"><span>Tienda virtual · mantenimiento mensual</span><b>S/ 40</b></div></div>`);
+  servicePanel.insertAdjacentHTML("beforeend", `<div data-store-prices><div class="status-line"><span>Tienda virtual · creación</span><b>S/ 60</b></div><div class="status-line"><span>Tienda virtual · renovación cada 6 meses</span><b>S/ 40</b></div></div>`);
 };
 
 const showPresentationModalBase = showPresentationModal;
@@ -109,7 +109,7 @@ showPresentationModal = function (profile) {
   const briefField = form?.querySelector('textarea[name="brief"]')?.closest(".field");
   if (!form || !briefField || form.elements.store_plan) return;
   const hasStorePlan = Boolean(profile.profile_commerce_settings?.[0]?.is_store_plan);
-  briefField.insertAdjacentHTML("beforebegin", `<section class="commerce-control"><div><b>Tienda virtual</b><p class="hint">Hasta 10 productos o servicios. Creación S/ 60 y mantenimiento mensual S/ 40.</p></div><label class="switch-row"><input type="checkbox" name="store_plan" ${hasStorePlan ? "checked" : ""}> Activar tienda</label></section>`);
+  briefField.insertAdjacentHTML("beforebegin", `<section class="commerce-control"><div><b>Tienda virtual</b><p class="hint">Hasta 10 productos o servicios. Creación S/ 60 y renovación cada 6 meses S/ 40.</p></div><label class="switch-row"><input type="checkbox" name="store_plan" ${hasStorePlan ? "checked" : ""}> Activar tienda</label></section>`);
 };
 
 const savePresentationBase = savePresentation;
@@ -125,7 +125,7 @@ showProfileModal = function (profile) {
   showProfileModalBase(profile);
   const select = document.querySelector("#service-type");
   if (!select || select.querySelector('option[value="store_setup"]')) return;
-  select.insertAdjacentHTML("beforeend", `<option value="store_setup">Tienda virtual · creación — S/ 60</option><option value="store_maintenance">Tienda virtual · mantenimiento mensual — S/ 40</option>`);
+  select.insertAdjacentHTML("beforeend", `<option value="store_setup">Tienda virtual · creación — S/ 60</option><option value="store_maintenance">Tienda virtual · renovación 6 meses — S/ 40</option>`);
 };
 
 // Catálogo comercial: imágenes públicas de productos solo se administran desde este panel.
@@ -356,4 +356,82 @@ showClientEdit = function (profile) {
     }
     return previousSubmit.call(form, event);
   };
+};
+
+// Gestión QR: permite al administrador consultar el QR de un perfil sin suplantar al titular.
+const loadQrForProfileOwner = loadQr;
+loadQr = async function (candidateId, target = "#qr-result") {
+  if (!state.staff) return loadQrForProfileOwner(candidateId, target);
+  const el = document.querySelector(target);
+  if (!el) return;
+  el.className = "qr-result";
+  el.textContent = "Consultando identificación QR…";
+  const { data, error } = await supabase.rpc("admin_get_qr", { p_candidate_id: candidateId });
+  if (error || !data?.url) {
+    el.className = "qr-result error";
+    el.textContent = error?.message || "No se pudo recuperar este QR. Ejecuta 016_admin_qr_access_and_storage.sql.";
+    return;
+  }
+  try {
+    const image = await QRCode.toDataURL(data.url, { width: 680, margin: 2, color: { dark: "#06141b", light: "#eaffff" } });
+    const qrState = data.is_active ? "habilitado" : "deshabilitado";
+    el.className = "qr-result qr-result-admin";
+    el.innerHTML = `<img src="${image}" alt="Código QR único del perfil"><div class="qr-copy"><span class="mini-kicker">QR único del perfil</span><b>${qrState === "habilitado" ? "Disponible para escaneo" : "Guardado, pero deshabilitado"}</b><span class="pill ${qrState === "habilitado" ? "active" : "disabled"}">${qrState}</span><a href="${escape(data.url)}" target="_blank" rel="noreferrer">Abrir destino de matriz ↗</a><div class="qr-inline-actions"><a class="small-button orange" download="qr-cvirtual-${escape(candidateId)}.png" href="${image}">Descargar PNG</a><button class="small-button" type="button" data-copy-qr="${escape(data.url)}">Copiar enlace</button><button class="small-button" type="button" data-share-qr="${escape(data.url)}">Compartir</button></div><small class="qr-storage-status">Guardando copia estable en Storage…</small></div>`;
+    el.querySelector("[data-copy-qr]")?.addEventListener("click", async (event) => { try { await navigator.clipboard.writeText(event.currentTarget.dataset.copyQr); notify("Enlace QR copiado.", "success"); } catch { notify("No se pudo copiar el enlace.", "error"); } });
+    el.querySelector("[data-share-qr]")?.addEventListener("click", async (event) => { const url = event.currentTarget.dataset.shareQr; try { if (navigator.share) await navigator.share({ title: "Perfil CVirtual", url }); else { await navigator.clipboard.writeText(url); notify("Enlace QR copiado para compartir.", "success"); } } catch {} });
+    const storageStatus = el.querySelector(".qr-storage-status");
+    try { const stored = await ensureAdminQrStorage(candidateId, data, image); if (storageStatus) storageStatus.textContent = `Copia estable: ${stored.qr_storage_bucket}/${stored.qr_storage_path}`; }
+    catch (storageError) { if (storageStatus) storageStatus.textContent = `El QR se puede ver y descargar; falta guardar su copia: ${storageError.message || "ejecuta 016"}`; }
+  } catch { el.className = "qr-result error"; el.textContent = "No se pudo renderizar la imagen QR."; }
+};
+
+async function ensureAdminQrStorage(candidateId, qr, imageDataUrl) {
+  let storage = qr;
+  if (!storage.qr_storage_path) {
+    const { data, error } = await supabase.rpc("admin_prepare_qr_storage", { p_candidate_id: candidateId });
+    if (error || !data?.qr_storage_path) throw new Error(error?.message || "No se pudo preparar la ruta privada del QR");
+    storage = { ...storage, ...data };
+  }
+  const imageBlob = await (await fetch(imageDataUrl)).blob();
+  const { error } = await supabase.storage.from(storage.qr_storage_bucket || "cv-qr-codes").upload(storage.qr_storage_path, imageBlob, { contentType: "image/png", upsert: true });
+  if (error) throw new Error(error.message);
+  return storage;
+}
+
+const openModalOriginal = openModal;
+openModal = function (html, bind) {
+  const layer = document.createElement("div");
+  layer.className = "modal-backdrop";
+  layer.innerHTML = `<section class="modal"><button class="modal-close" aria-label="Cerrar">×</button><div class="modal-content">${html}</div></section>`;
+  document.body.append(layer);
+  layer.querySelector(".modal-close").onclick = () => layer.remove();
+  bind?.();
+};
+
+function showAdminQrModal(profile) {
+  openModal(`<section class="qr-ledger"><div class="qr-ledger-head"><div><span class="kicker">Identificación persistente</span><h2>QR de ${escape(profile.display_name || `${profile.first_name} ${profile.last_name}`)}</h2><p class="hint">Este código conserva su token y enlace. Habilitarlo o deshabilitarlo no modifica su imagen, pago ni publicación.</p></div><span class="pill ${profile.candidate_qr_codes?.[0]?.is_active ? "active" : "disabled"}">${profile.candidate_qr_codes?.[0]?.is_active ? "QR habilitado" : "QR deshabilitado"}</span></div><div id="managed-qr" class="qr-result qr-result-large">Preparando QR único…</div><div class="qr-ledger-notes"><div><b>1. Identificación</b><span>El token se mantiene único por perfil.</span></div><div><b>2. Resguardo</b><span>El PNG se conserva privado en cv-qr-codes.</span></div><div><b>3. Publicación</b><span>El enlace público sigue dependiendo de tu revisión manual.</span></div></div></section>`, () => loadQr(profile.id, "#managed-qr"));
+}
+
+const bindAdminActionsWithPersistentQr = bindAdminActions;
+bindAdminActions = function () {
+  bindAdminActionsWithPersistentQr();
+  document.querySelectorAll('[data-action="detail"]').forEach((button) => {
+    const actions = button.parentElement;
+    if (!actions || actions.querySelector('[data-action="qr-view"]')) return;
+    button.insertAdjacentHTML("afterend", `<button class="small-button qr-view-button" data-profile="${escape(button.dataset.profile)}" data-action="qr-view">Ver QR</button>`);
+  });
+  document.querySelectorAll('[data-action="qr-view"]').forEach((button) => button.onclick = () => {
+    const profile = state.profiles.find((item) => item.id === button.dataset.profile);
+    if (profile) showAdminQrModal(profile);
+  });
+};
+
+const showProfileModalWithQrShortcut = showProfileModal;
+showProfileModal = function (profile) {
+  showProfileModalWithQrShortcut(profile);
+  const control = document.querySelector(".modal-backdrop .qr-control");
+  if (!control || control.querySelector(".open-qr-ledger")) return;
+  control.classList.add("qr-control-admin");
+  control.querySelector("div")?.insertAdjacentHTML("beforeend", `<button class="small-button open-qr-ledger" type="button">Abrir QR completo</button>`);
+  control.querySelector(".open-qr-ledger")?.addEventListener("click", () => { document.querySelector(".modal-backdrop")?.remove(); showAdminQrModal(profile); });
 };
